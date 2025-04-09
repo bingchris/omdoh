@@ -11,6 +11,8 @@ del warnings
 
 from cryptography.fernet import Fernet
 import mysql.connector
+import hashlib
+import base64
 
 # temporary storage
 # TODO: use mysql/mariadb
@@ -23,9 +25,9 @@ chatrooms_lock = threading.Lock()
 # SET UP MYSQL/MARIADB CONNECTION
 db = mysql.connector.connect(
     host="localhost",
-    user="root",         # TODO: update credentials
-    password="some", # TODO: update credentials
-    database="omdoh_rew"  # TODO: ensure database exists
+    user="root",         # i hope you know what you're doing
+    password="some",     
+    database="omdoh_rew"  
 )
 cursor = db.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255))")
@@ -36,6 +38,7 @@ encryption_key = Fernet.generate_key()
 cipher = Fernet(encryption_key)
 
 # ssl
+dossl=False # if you setup a self-signed certificate, set it to False, because yeah self-explanatory (only for Flask tho)
 context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 context.load_cert_chain(certfile="server.pem")
 
@@ -55,7 +58,8 @@ def register():
     cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
     if cursor.fetchone():
         return jsonify({"error": "User already exists"}), 400
-    cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_password))
     db.commit()
     return jsonify({"status": "Registered successfully"})
 
@@ -73,13 +77,31 @@ def login():
         return jsonify({"error": "Missing username or password"}), 400
     cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
     user = cursor.fetchone()
-    if not user or user[1] != password:
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    if not user or user[1] != hashed_password:
         return jsonify({"error": "Invalid credentials"}), 401
     raw_token = uuid.uuid4().hex
-    token = cipher.encrypt(raw_token.encode()).decode()  # token encrypted
+    token = cipher.encrypt(raw_token.encode()).decode()  # token encrypted and Base64'ed by Fernet
     expires = datetime.datetime.utcnow() + datetime.timedelta(days=1)
     tokens[token] = (username, expires)
     return jsonify({"access_token": token, "expires": expires.isoformat()})
+
+@app.route('/status', methods=['GET'])
+def status():
+    # GET STATUS: registered users and connected clients
+    cursor.execute("SELECT COUNT(*) FROM users")
+    registered = cursor.fetchone()[0]
+    
+    with chatrooms_lock:
+        unique_connections = set()
+        for room, conns in chatrooms.items():
+            unique_connections.update(conns)
+        connected = len(unique_connections)
+    
+    return jsonify({"registered": registered, "connected": connected})
+
+
+
 
 def handle_client(connection):
     """
@@ -199,4 +221,5 @@ if __name__ == "__main__":
 
     # omdoh http (for login, register)
     print("HTTP server listening on port 5000...")
-    app.run(host="0.0.0.0", port=5000)
+    if dossl==True: app.run(host="0.0.0.0", port=5000, ssl_context=context)
+    else: app.run(host="0.0.0.0", port=5000)
