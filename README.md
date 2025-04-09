@@ -11,7 +11,7 @@ To setup an omdoh server, you need to create an ssl certificate named `server.pe
 
 ```openssl req -new -x509 -days 365 -nodes -out server.pem -keyout server.pem```
 
-omdoh uses the following packages: `socket` `ssl` `threading` `json` `uuid` `datetime` `flask: Flask, request, jsonify`, chances are that you need to install them.
+omdoh uses the following packages: `socket` `ssl` `threading` `json` `uuid` `datetime` `mysql.connector` `flask: Flask, request, jsonify` `warnings` `cryptography.fernet`, chances are that you need to install them.
 
 Then run the omdoh.py file, which will start the server.
 

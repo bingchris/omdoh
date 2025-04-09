@@ -9,12 +9,31 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
 del warnings
 
+from cryptography.fernet import Fernet
+import mysql.connector
+
 # temporary storage
 # TODO: use mysql/mariadb
-users = {}       
+# (users now stored in MySQL instead of the temporary dictionary)
+# users = {}       
 tokens = {}      #(username, expiry datetime) #TODO: encrypt
 chatrooms = {}
 chatrooms_lock = threading.Lock()
+
+# SET UP MYSQL/MARIADB CONNECTION
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",         # TODO: update credentials
+    password="some", # TODO: update credentials
+    database="omdoh_rew"  # TODO: ensure database exists
+)
+cursor = db.cursor()
+cursor.execute("CREATE TABLE IF NOT EXISTS users (username VARCHAR(255) PRIMARY KEY, password VARCHAR(255))")
+db.commit()
+
+# SET UP TOKEN ENCRYPTION
+encryption_key = Fernet.generate_key()
+cipher = Fernet(encryption_key)
 
 # ssl
 context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -33,9 +52,11 @@ def register():
     password = data.get("password")
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
-    if username in users:
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    if cursor.fetchone():
         return jsonify({"error": "User already exists"}), 400
-    users[username] = password
+    cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+    db.commit()
     return jsonify({"status": "Registered successfully"})
 
 @app.route('/login', methods=['POST'])
@@ -50,9 +71,12 @@ def login():
     password = data.get("password")
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
-    if username not in users or users[username] != password:
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+    if not user or user[1] != password:
         return jsonify({"error": "Invalid credentials"}), 401
-    token = uuid.uuid4().hex
+    raw_token = uuid.uuid4().hex
+    token = cipher.encrypt(raw_token.encode()).decode()  # token encrypted
     expires = datetime.datetime.utcnow() + datetime.timedelta(days=1)
     tokens[token] = (username, expires)
     return jsonify({"access_token": token, "expires": expires.isoformat()})
