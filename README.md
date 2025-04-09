@@ -1,3 +1,5 @@
+<img src="./.github/assets/omdoh.png" width="200"> <p>This is omdoh's mascot, omdough.</p>
+
 # omdoh (a modern instant messaging server)
 omdoh is designed to be a modern-times instant messaging server to replace old, unmaintained servers.
 
